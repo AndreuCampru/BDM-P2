@@ -45,5 +45,12 @@ def main():
     merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db,
                                      "lookup_table_neighborhood", "Income_Lookup_Neighborhood", "Rent_Lookup_neighborhood","Density_Lookup_Neighborhood")  #Change names if needed
 
+
+
+    reconcile_data(spark, vm_host, mongodb_port, persistent_db, formatted_db, 
+                   input_collection="Income_OpenBCN", 
+                   lookup_district_collection="lookup_table_district", 
+                   lookup_neighborhood_collection="lookup_table_neighborhood", 
+                   output_collection="income_reconciled")
 if __name__ == "__main__":
     main()

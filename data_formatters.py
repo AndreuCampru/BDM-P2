@@ -1,7 +1,13 @@
+from datetime import datetime
+from pymongo import MongoClient
+from pyspark.sql.functions import col, lower, regexp_replace, udf, lit, explode, array_union, array_distinct
+from pyspark.sql.types import DoubleType
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, concat_ws
+from pyspark.sql.functions import col, lower, regexp_replace, when, udf
 import logging
 from pyspark.sql.types import *
+import jellyfish # for similarity jaro_winkler_udf
 
 #Configure the logger
 logging.basicConfig(level=logging.INFO)
@@ -143,28 +149,36 @@ def change_collection_schema(spark, host, port, source_db, target_db, collection
         logger.error(f"Error while converting data types for collection '{collection}': {e}")
 
 
-
-def reconcile_data_with_lookup(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_collection, output_collection, input_join_attribute, lookup_join_attribute, lookup_id, input_id_reconcile, threshold):
+def reconcile_data(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection):
     try:
-        logger.info(f"Reading '{input_collection}' collection from MongoDB...")
+        # Read input collection
         input_df = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection)
+
+        # Read lookup collections
+        lookup_district_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_district_collection)
+        lookup_neighborhood_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_neighborhood_collection)
+
+        # Preprocess join columns to lower case and remove accents
+        input_df = input_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
+        input_df = input_df.withColumn("neigh_name ", lower(regexp_replace(col("neigh_name "), "[\u0300-\u036F]", "")))
         
-        logger.info(f"Reading '{lookup_collection}' collection from MongoDB...")
-        lookup_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_collection)
-        
-        input_df = input_df.withColumn(input_join_attribute, lower(regexp_replace(col(input_join_attribute), "[\u0300-\u036F]", "")))
-        lookup_df = lookup_df.withColumn(lookup_join_attribute, lower(regexp_replace(col(lookup_join_attribute), "[\u0300-\u036F]", "")))
-        
-        logger.info("Performing join and reconciliation...")
-        result_df = input_df.join(lookup_df,
-                                  when(levenshtein(col(input_join_attribute), col(lookup_join_attribute)) <= threshold, True).otherwise(False),
-                                  "left"
-                                  ).withColumn(input_id_reconcile, col(lookup_id))
-        
-        result_df = result_df.dropDuplicates(["_id"])
-        
-        logger.info(f"Writing reconciled data to collection '{output_collection}' in MongoDB.")
-        write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, result_df)
+        lookup_district_df = lookup_district_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
+        lookup_neighborhood_df = lookup_neighborhood_df.withColumn("neighborhood_name", lower(regexp_replace(col("neighborhood_name"), "[\u0300-\u036F]", "")))
+
+        # Reconcile district
+        reconciled_df = input_df.join(lookup_district_df, input_df["district_name"] == lookup_district_df["district_name"], "left") \
+                                .select(input_df["*"], lookup_district_df["district_reconciled"]) \
+                                .drop(lookup_district_df["district_name"])
+
+        # Reconcile neighborhood
+        reconciled_df = reconciled_df.join(lookup_neighborhood_df, reconciled_df["neigh_name "] == lookup_neighborhood_df["neighborhood_name"], "left") \
+                                     .select(reconciled_df["*"], lookup_neighborhood_df["neighborhood_reconciled"].alias("neigh_name_reconciled")) \
+                                     .drop(lookup_neighborhood_df["neighborhood_name"])
+
+        reconciled_df = reconciled_df.dropDuplicates(["_id"])
+
+        # Write the reconciled data to a new collection in MongoDB
+        write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, reconciled_df)
         logger.info(f"Reconciled data written to collection '{output_collection}' in MongoDB.")
     except Exception as e:
         logger.error(f"Error reconciling data: {e}")
