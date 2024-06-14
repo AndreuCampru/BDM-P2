@@ -23,7 +23,19 @@ def main():
     #Drop duplicates and save new collection
     drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, persistent_db, ['Income_OpenBCN','Density_OpenCBN','Rent_Idealista'])
     
-    #def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2,input_collection3):
+    schema_income = StructType([
+        StructField("_id", IntegerType(), nullable=False),
+        StructField("neigh_name", StringType(), nullable=False),
+        StructField("district_id", IntegerType(), nullable=False),
+        StructField("district_name", StringType(), nullable=False),
+        StructField("info", ArrayType(StructType([
+            StructField("year", IntegerType(), nullable=True),
+            StructField("pop", IntegerType(), nullable=True),
+            StructField("RFD", DoubleType(), nullable=True)
+        ])), nullable=True)])
+    
+    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Income_OpenBCN", schema_income)
+
 
         # Merge lookup district tables
     merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db,

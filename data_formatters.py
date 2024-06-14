@@ -48,9 +48,9 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
             #Drop duplicates based on the columns "neigh_name", "district_id", and "district_name"
             logger.info(f'Dropping duplicates for collection "{collection}".')
             
-            if collection == 'OpenBCN': #OpenBCN we choose the columns "neigh_name", "district_id", and "district_name" to remove duplicates
+            if collection == 'Income_OpenBCN': #OpenBCN we choose the columns "neigh_name", "district_id", and "district_name" to remove duplicates
                 deduplicated_df = df.dropDuplicates(["neigh_name ", "district_id", "district_name"])
-            elif collection == 'Idealista': #Idealista the date is the id, we will choose that to remove duplicates
+            elif collection == 'Rent_Idealista': #Idealista the date is the id, we will choose that to remove duplicates
                 deduplicated_df = df.dropDuplicates(["_id"])
                 
             #If the collection is named "Income_lookup_district" or "Rebt_lookup_district", we will drop duplicates based on the column "district_id"
@@ -65,9 +65,9 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
             new_collection_name = f"{collection}_deduplicated"
             logger.info(f'Writing deduplicated data to new collection "{new_collection_name}" in MongoDB.')
             write_to_collection(vm_host, mongodb_port, db_name, new_collection_name, sorted_df)
-            logger.info(f'Deduplicated data for "{collection}" written to new collection "{new_collection_name}" in MongoDB.')
+            logger.info(f'Deduplicated data for "{collection}" written to new collection "{new_collection_name}" in MongoDB.\n')
     except Exception as e:
-        logger.error(f"Error processing collections for deduplication: {e}")
+        logger.error(f"Error processing collections for deduplication: {e}\n")
 
 
 
@@ -92,9 +92,9 @@ def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, fo
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_district" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
         write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, merged_df)
-        logger.info(f"Merged lookup district tables written to collection '{output_collection}' in MongoDB.")
+        logger.info(f"Merged lookup district tables written to collection '{output_collection}' in MongoDB.\n")
     except Exception as e:
-        logger.error(f"Error merging lookup district tables: {e}")
+        logger.error(f"Error merging lookup district tables: {e}\n")
         
         
         
@@ -119,9 +119,9 @@ def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_neighborhood" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
         write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, merged_df)
-        logger.info(f"Merged lookup neighborhood tables written to collection '{output_collection}' in MongoDB.")
+        logger.info(f"Merged lookup neighborhood tables written to collection '{output_collection}' in MongoDB.\n")
     except Exception as e:
-        logger.error(f"Error merging lookup neighborhood tables: {e}")
+        logger.error(f"Error merging lookup neighborhood tables: {e}\n")
         
         
         
@@ -137,7 +137,7 @@ def change_collection_schema(spark, host, port, source_db, target_db, collection
                 new_df = df.withColumn(field.name, col(field.name).cast(field.dataType))
 
         #Write the DataFrame with the new schema to a new collection in MongoDB
-        write_to_collection(new_df, host, port, target_db, collection)
+        write_to_collection(host, port, target_db, collection,new_df)
         logger.info(f"Successfully converted data types for collection '{collection}'.")
     except Exception as e:
         logger.error(f"Error while converting data types for collection '{collection}': {e}")
