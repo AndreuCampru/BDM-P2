@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, concat_ws
 import logging
+from pyspark.sql.types import *
 
 #Configure the logger
 logging.basicConfig(level=logging.INFO)
@@ -72,7 +73,7 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
 
 
 #Function to merge lookup distric tables into only one and send it to the formatted zone
-def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2):
+def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2,input_collection3):
     try:
         #Read the collections from MongoDB that we specified, we will input the lookup district tables
         logger.info(f"Reading '{input_collection1}' collection from MongoDB...")
@@ -81,9 +82,12 @@ def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, fo
         logger.info(f"Reading '{input_collection2}' collection from MongoDB...")
         df2 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection2)
         
+        logger.info(f"Reading '{input_collection3}' collection from MongoDB...")
+        df3 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection3)
+        
         #Make the union of the tables and drop duplicates based on the column "_id"
         logger.info("Merging lookup district tables...")
-        merged_df = df1.union(df2).dropDuplicates(["_id"])
+        merged_df = df1.union(df2).union(df3).dropDuplicates(["_id"])
         
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_district" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
@@ -96,7 +100,7 @@ def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, fo
         
 #Same as the previous function but with the neighborhood tables
 #Function to merge lookup neighborhood tables into only one and send it to the formatted zone
-def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2):
+def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2, input_collection3):
     try:
         #Read the collections from MongoDB that we specified, we will input the lookup neighborhood tables
         logger.info(f"Reading '{input_collection1}' collection from MongoDB...")
@@ -105,9 +109,12 @@ def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db
         logger.info(f"Reading '{input_collection2}' collection from MongoDB...")
         df2 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection2)
         
+        logger.info(f"Reading '{input_collection3}' collection from MongoDB...")
+        df3 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection3)
+        
         #Make the union of the tables and drop duplicates based on the column "_id"
         logger.info("Merging lookup neighborhood tables...")
-        merged_df = df1.union(df2).dropDuplicates(["_id"])
+        merged_df = df1.union(df2).union(df3).dropDuplicates(["_id"])
         
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_neighborhood" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
@@ -115,3 +122,49 @@ def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db
         logger.info(f"Merged lookup neighborhood tables written to collection '{output_collection}' in MongoDB.")
     except Exception as e:
         logger.error(f"Error merging lookup neighborhood tables: {e}")
+        
+        
+        
+#Create new schema for a collection, changing the data types of the columns
+def change_collection_schema(spark, host, port, source_db, target_db, collection, schema):
+    try:
+        #Read the collection from MongoDB
+        df = read_collection(spark, host, port, source_db, collection)
+
+        #Change the data types of the columns in the DataFrame following to the new schema
+        for field in schema.fields:
+            if field.name in df.columns:
+                new_df = df.withColumn(field.name, col(field.name).cast(field.dataType))
+
+        #Write the DataFrame with the new schema to a new collection in MongoDB
+        write_to_collection(new_df, host, port, target_db, collection)
+        logger.info(f"Successfully converted data types for collection '{collection}'.")
+    except Exception as e:
+        logger.error(f"Error while converting data types for collection '{collection}': {e}")
+
+
+
+def reconcile_data_with_lookup(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_collection, output_collection, input_join_attribute, lookup_join_attribute, lookup_id, input_id_reconcile, threshold):
+    try:
+        logger.info(f"Reading '{input_collection}' collection from MongoDB...")
+        input_df = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection)
+        
+        logger.info(f"Reading '{lookup_collection}' collection from MongoDB...")
+        lookup_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_collection)
+        
+        input_df = input_df.withColumn(input_join_attribute, lower(regexp_replace(col(input_join_attribute), "[\u0300-\u036F]", "")))
+        lookup_df = lookup_df.withColumn(lookup_join_attribute, lower(regexp_replace(col(lookup_join_attribute), "[\u0300-\u036F]", "")))
+        
+        logger.info("Performing join and reconciliation...")
+        result_df = input_df.join(lookup_df,
+                                  when(levenshtein(col(input_join_attribute), col(lookup_join_attribute)) <= threshold, True).otherwise(False),
+                                  "left"
+                                  ).withColumn(input_id_reconcile, col(lookup_id))
+        
+        result_df = result_df.dropDuplicates(["_id"])
+        
+        logger.info(f"Writing reconciled data to collection '{output_collection}' in MongoDB.")
+        write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, result_df)
+        logger.info(f"Reconciled data written to collection '{output_collection}' in MongoDB.")
+    except Exception as e:
+        logger.error(f"Error reconciling data: {e}")
