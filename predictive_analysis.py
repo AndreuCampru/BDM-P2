@@ -38,7 +38,7 @@ def get_data_from_formatted_to_exploitation(self):
         self.vm_host,
         self.mongodb_port,
         self.formatted_db,
-        "idealista_reconciled"
+        "Rent_Idealista_reconciled"
     ).select("_id", "size", "rooms", "bathrooms", "latitude", "longitude", "exterior", "floor", "has360",
         "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo","neighborhood_id", "numPhotos", "price") \
         .filter(col("municipality") == "Barcelona") \
@@ -50,17 +50,17 @@ def get_data_from_formatted_to_exploitation(self):
         self.vm_host,
         self.mongodb_port,
         self.formatted_db,
-        "income_reconciled"
+        "Income_OpenBCN_reconciled"
     ).select("_id", "info.year", "info.RFD")
     # Read buildin_age_reconciled collection and select relevant columns
-    buildin_age_df = MongoDBUtils.read_collection(
+    density_df = MongoDBUtils.read_collection(
         self.logger,
         self.spark,
         self.vm_host,
         self.mongodb_port,
         self.formatted_db,
-        "building_age_reconciled"
-    ).select("_id", "info.year", "info.mean_age")
+        "Density_OpenBCN_reconciled"
+    ).select("_id", "info.year", "info.density")
     # Join the three dataframes on district_id
     joined_df = idealista_df.join(
         income_df,
@@ -68,10 +68,10 @@ def get_data_from_formatted_to_exploitation(self):
         "left"
     ).drop(income_df["_id"]).withColumnRenamed("year", "income_year")
     joined_df = joined_df.join(
-        buildin_age_df,
-        joined_df["neighborhood_id"] == buildin_age_df["_id"],
+        density_df,
+        joined_df["neighborhood_id"] == density_df["_id"],
         "left"
-    ).drop(buildin_age_df["_id"]).withColumnRenamed("year", "building_year")
+    ).drop(density_df["_id"]).withColumnRenamed("year", "density_year")
     self.logger.info('Data sources joined successfully.')
     # Save the joined dataframe to a new collection in MongoDB
     MongoDBUtils.write_to_collection(
@@ -95,12 +95,12 @@ def preprocess_and_train_model(self):
     )
 
     # Drop unnecessary columns
-    columns_to_drop = ['_id', 'income_year', 'building_year']
+    columns_to_drop = ['_id', 'income_year', 'density_year']
     df = df.drop(*columns_to_drop)
 
     # Calculate the mean of the 'mean_age' column
-    df = df.withColumn('mean_age', expr(
-        'aggregate(mean_age, CAST(0.0 AS DOUBLE), (acc, x) -> acc + x) / size(mean_age)'))
+    df = df.withColumn('density', expr(
+        'aggregate(density, CAST(0.0 AS DOUBLE), (acc, x) -> acc + x) / size(density)'))
     
     # Calculate the mean of the 'RFD' column
     df = df.withColumn('RFD', expr(
