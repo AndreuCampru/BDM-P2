@@ -30,35 +30,35 @@ def create_spark_session(logger):
 
 
 # Function to move data from formatted zone to exploitation zone
-def get_data_from_formatted_to_exploitation(self):
+def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db):
     # Read idealista_reconciled collection and select relevant columns
     idealista_df = MongoDBUtils.read_collection(
-        self.logger,
-        self.spark,
-        self.vm_host,
-        self.mongodb_port,
-        self.formatted_db,
+        logger,
+        spark,
+        vm_host,
+        mongodb_port,
+        formatted_db,
         "Rent_Idealista_reconciled"
     ).select("_id", "size", "rooms", "bathrooms", "latitude", "longitude", "exterior", "floor", "has360",
-        "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo","neighborhood_id", "numPhotos", "price") \
+        "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo", "neighborhood_id", "numPhotos", "price") \
         .filter(col("municipality") == "Barcelona") \
         .filter(col("neighborhood_id").isNotNull())
     # Read income_reconciled collection and select relevant columns
     income_df = MongoDBUtils.read_collection(
-        self.logger,
-        self.spark,
-        self.vm_host,
-        self.mongodb_port,
-        self.formatted_db,
+        logger,
+        spark,
+        vm_host,
+        mongodb_port,
+        formatted_db,
         "Income_OpenBCN_reconciled"
     ).select("_id", "info.year", "info.RFD")
-    # Read buildin_age_reconciled collection and select relevant columns
+    # Read density_reconciled collection and select relevant columns
     density_df = MongoDBUtils.read_collection(
-        self.logger,
-        self.spark,
-        self.vm_host,
-        self.mongodb_port,
-        self.formatted_db,
+        logger,
+        spark,
+        vm_host,
+        mongodb_port,
+        formatted_db,
         "Density_OpenBCN_reconciled"
     ).select("_id", "info.year", "info.density")
     # Join the three dataframes on district_id
@@ -72,25 +72,25 @@ def get_data_from_formatted_to_exploitation(self):
         joined_df["neighborhood_id"] == density_df["_id"],
         "left"
     ).drop(density_df["_id"]).withColumnRenamed("year", "density_year")
-    self.logger.info('Data sources joined successfully.')
+    logger.info('Data sources joined successfully.')
     # Save the joined dataframe to a new collection in MongoDB
     MongoDBUtils.write_to_collection(
-        self.logger,
-        self.vm_host,
-        self.mongodb_port,
-        self.exploitation_db,
+        logger,
+        vm_host,
+        mongodb_port,
+        exploitation_db,
         "model_collection",
         joined_df
     )
 
-
-def preprocess_and_train_model(self):
+# Function to preprocess data and train model
+def preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db):
     df = MongoDBUtils.read_collection(
-        self.logger,
-        self.spark,
-        self.vm_host,
-        self.mongodb_port,
-        self.exploitation_db,
+        logger,
+        spark,
+        vm_host,
+        mongodb_port,
+        exploitation_db,
         "model_collection"
     )
 
@@ -98,7 +98,7 @@ def preprocess_and_train_model(self):
     columns_to_drop = ['_id', 'income_year', 'density_year']
     df = df.drop(*columns_to_drop)
 
-    # Calculate the mean of the 'mean_age' column
+    # Calculate the mean of the 'density' column
     df = df.withColumn('density', expr(
         'aggregate(density, CAST(0.0 AS DOUBLE), (acc, x) -> acc + x) / size(density)'))
     
@@ -112,7 +112,7 @@ def preprocess_and_train_model(self):
         df = df.withColumn(column_name, col(column_name).cast("string"))
 
     # Convert numeric columns to appropriate types
-    numeric_cols = ["RFD", "bathrooms", "floor", "latitude", "longitude", "mean_age",
+    numeric_cols = ["RFD", "bathrooms", "floor", "latitude", "longitude",
                     "numPhotos", "rooms", "size"]
     for column in numeric_cols:
         df = df.withColumn(column, df[column].cast("double"))
@@ -120,11 +120,10 @@ def preprocess_and_train_model(self):
     # Convert string columns to numeric using StringIndexer
     string_cols = ["exterior", "has360", "has3DTour", "hasLift", "hasPlan",
                    "hasStaging", "hasVideo", "neighborhood_id"]
-    indexers = [StringIndexer(inputCol=column, outputCol=column+"_index", handleInvalid="skip").fit(df) for column
-                in string_cols]
+    indexers = [StringIndexer(inputCol=column, outputCol=column+"_index", handleInvalid="skip").fit(df) for column in string_cols]
     pipeline = Pipeline(stages=indexers)
     df = pipeline.fit(df).transform(df)
-    df.dropna()
+    df = df.dropna()
 
     # Assemble features into a single vector column
     feature_cols = numeric_cols + [column + "_index" for column in string_cols]
@@ -161,10 +160,9 @@ def preprocess_and_train_model(self):
     r2 = r2_evaluator.evaluate(predictions)
 
     # Print the evaluation metrics
-    self.logger.info(f"Root Mean Squared Error (RMSE): {rmse}")
-    self.logger.info(f"Mean Absolute Error (MAE): {mae}", )
-    self.logger.info(f"Mean Squared Error (MSE): {mse}")
-    self.logger.info(f"R-squared (R2): {r2}")
-
+    logger.info(f"Root Mean Squared Error (RMSE): {rmse}")
+    logger.info(f"Mean Absolute Error (MAE): {mae}")
+    logger.info(f"Mean Squared Error (MSE): {mse}")
+    logger.info(f"R-squared (R2): {r2}")
 
     return model

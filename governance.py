@@ -7,6 +7,7 @@
 # Import required libraries
 import logging
 from pyspark.sql.types import *
+import os
 
 from data_formatters import (
     create_spark_session, 
@@ -17,16 +18,20 @@ from data_formatters import (
     reconcile_data
 )
 
+from predictive_analysis import get_data_from_formatted_to_exploitation, preprocess_and_train_model
+
 
 def main():
 
-    ## Data formatters
+
     # Parameters
     vm_host = "localhost"
     mongodb_port = "27017"
     persistent_db = "persistent_landing_zone"
     formatted_db = "formatted_zone"
-    
+    exploitation_db = "exploitation_zone"
+
+    ## Data formatters
     # Collection names for deduplication
     collections = [
         "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN",
@@ -191,6 +196,23 @@ def main():
         )
 
     logger.info("Data processing pipeline completed successfully.")
+
+    ## Descriptive Analysis
+
+    ## Predictive Analysis
+    # Move data from formatted zone to exploitation zone
+    get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db)
+    
+    # Preprocess data and train model
+    model = preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db)
+    
+    # Get the current directory
+    current_dir = os.getcwd()
+    
+    # Save the model in the current directory
+    model.write().overwrite().save(current_dir + "/model")
+    logger.info(f'Data training process completed. Model saved at {current_dir}')
+
 
 if __name__ == "__main__":
     main()
