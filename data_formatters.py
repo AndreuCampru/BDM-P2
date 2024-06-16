@@ -54,14 +54,18 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
             #Drop duplicates based on the columns "neigh_name", "district_id", and "district_name"
             logger.info(f'Dropping duplicates for collection "{collection}".')
             
-            if collection == 'Income_OpenBCN': #OpenBCN we choose the columns "neigh_name", "district_id", and "district_name" to remove duplicates
-                deduplicated_df = df.dropDuplicates(["neigh_name ", "district_id", "district_name"])
+            if collection == 'Income_OpenBCN': #OpenBCN we choose the columns "_id" and "year" to remove duplicates
+                deduplicated_df = df.dropDuplicates(["_id ", "year"])
             elif collection == 'Rent_Idealista': #Idealista the date is the id, we will choose that to remove duplicates
                 deduplicated_df = df.dropDuplicates(["_id"])
+            elif collection == 'Density_OpenBCN':
+                  deduplicated_df = df.dropDuplicates(["_id ", "year"])
                 
             #If the collection is named "Income_lookup_district" or "Rebt_lookup_district", we will drop duplicates based on the column "district_id"
-            if collection == 'Income_lookup_district' or collection == 'Income_lookup_neighborhood' or collection == 'Rebt_lookup_district' or collection == 'Rent_lookup_neigh':
+            if collection == 'Income_lookup_district' or collection == 'Income_lookup_neighborhood' or collection == 'Rent_lookup_district' or collection == 'Rent_lookup_neigh':
                 deduplicated_df = df.dropDuplicates(["_id"])
+            if collection == 'Density_lookup_district' or collection == 'Density_lookup_neighborhood':
+                deduplicated_df = df.dropDuplicates(["_id"])            
 
             #Sort the data by "_id"  because it loses the order when deduplicating
             logger.info(f'Sorting data for collection "{collection}".')
