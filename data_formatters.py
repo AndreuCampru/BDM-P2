@@ -44,22 +44,22 @@ def write_to_collection(vm_host, mongodb_port, db_name, collection_name, datafra
         .save()
 
 #Function to drop duplicates and save new collection
-def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_name, collections):
+def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, source_db_name, sink_db_name, collections):
     try:
         #Iterate over the collections 
         for collection in collections:
             #First read the collection from MongoDB and store it in a DataFrame
             logger.info(f'Read collection "{collection}" from MongoDB.')
-            df = read_collection(spark, vm_host, mongodb_port, db_name, collection)
+            df = read_collection(spark, vm_host, mongodb_port, source_db_name, collection)
             #Drop duplicates based on the columns "neigh_name", "district_id", and "district_name"
             logger.info(f'Dropping duplicates for collection "{collection}".')
             
-            if collection == 'Income_OpenBCN': #OpenBCN we choose the columns "_id" and "year" to remove duplicates
-                deduplicated_df = df.dropDuplicates(["_id ", "year"])
+            if collection == 'Income_OpenBCN': #OpenBCN we choose the column "_id" to remove duplicates
+                deduplicated_df = df.dropDuplicates(["_id"])
             elif collection == 'Rent_Idealista': #Idealista the date is the id, we will choose that to remove duplicates
                 deduplicated_df = df.dropDuplicates(["_id"])
             elif collection == 'Density_OpenBCN':
-                  deduplicated_df = df.dropDuplicates(["_id ", "year"])
+                  deduplicated_df = df.dropDuplicates(["_id"])
                 
             #If the collection is named "Income_lookup_district" or "Rebt_lookup_district", we will drop duplicates based on the column "district_id"
             if collection == 'Income_lookup_district' or collection == 'Income_lookup_neighborhood' or collection == 'Rent_lookup_district' or collection == 'Rent_lookup_neigh':
@@ -74,7 +74,7 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
             #Write the deduplicated data to a new collection in MongoDB with the name "{collection}_deduplicated"
             new_collection_name = f"{collection}_deduplicated"
             logger.info(f'Writing deduplicated data to new collection "{new_collection_name}" in MongoDB.')
-            write_to_collection(vm_host, mongodb_port, db_name, new_collection_name, sorted_df)
+            write_to_collection(vm_host, mongodb_port, sink_db_name, new_collection_name, sorted_df)
             logger.info(f'Deduplicated data for "{collection}" written to new collection "{new_collection_name}" in MongoDB.\n')
     except Exception as e:
         logger.error(f"Error processing collections for deduplication: {e}\n")
@@ -83,7 +83,7 @@ def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, db_nam
 
 
 #Function to merge lookup distric tables into only one and send it to the formatted zone
-def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2,input_collection3):
+def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, formatted_db, output_collection, input_collection1, input_collection2, input_collection3):
     try:
         #Read the collections from MongoDB that we specified, we will input the lookup district tables
         logger.info(f"Reading '{input_collection1}' collection from MongoDB...")
@@ -94,10 +94,29 @@ def merge_lookup_district_tables(spark, vm_host, mongodb_port, persistent_db, fo
         
         logger.info(f"Reading '{input_collection3}' collection from MongoDB...")
         df3 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection3)
+
+        # Ensure all columns have the correct names before merging
+        def rename_columns(df, col_mapping):
+            for original_name, new_name in col_mapping.items():
+                if original_name in df.columns:
+                    df = df.withColumnRenamed(original_name, new_name)
+            return df
+
+        col_mapping = {
+            "di": "district",
+            "di_n": "district_name",
+            "di_re": "district_reconciled",
+            "ne_id": "neighborhood_id"
+        }
+
+        df1 = rename_columns(df1, col_mapping)
+        df2 = rename_columns(df2, col_mapping)
+        df3 = rename_columns(df3, col_mapping)            
         
         #Make the union of the tables and drop duplicates based on the column "_id"
         logger.info("Merging lookup district tables...")
         merged_df = df1.union(df2).union(df3).dropDuplicates(["_id"])
+
         
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_district" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
@@ -121,10 +140,28 @@ def merge_lookup_neighborhood_tables(spark, vm_host, mongodb_port, persistent_db
         
         logger.info(f"Reading '{input_collection3}' collection from MongoDB...")
         df3 = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection3)
+
+        # Ensure all columns have the correct names before merging
+        def rename_columns(df, col_mapping):
+            for original_name, new_name in col_mapping.items():
+                if original_name in df.columns:
+                    df = df.withColumnRenamed(original_name, new_name)
+            return df
+
+        col_mapping = {
+            "ne": "neighborhood",
+            "ne_n": "neighborhood_name",
+            "ne_re": "neighborhood_reconciled"
+        }
+
+        df1 = rename_columns(df1, col_mapping)
+        df2 = rename_columns(df2, col_mapping)
+        df3 = rename_columns(df3, col_mapping)
         
         #Make the union of the tables and drop duplicates based on the column "_id"
         logger.info("Merging lookup neighborhood tables...")
         merged_df = df1.union(df2).union(df3).dropDuplicates(["_id"])
+
         
         #Write the merged data to a new collection in MongoDB with the name "lookup_table_neighborhood" in the formatted zone
         logger.info(f"Writing merged data to collection '{output_collection}' in MongoDB.")
@@ -140,14 +177,14 @@ def change_collection_schema(spark, host, port, source_db, target_db, collection
     try:
         #Read the collection from MongoDB
         df = read_collection(spark, host, port, source_db, collection)
-
+        new_df = df
         #Change the data types of the columns in the DataFrame following to the new schema
         for field in schema.fields:
             if field.name in df.columns:
                 new_df = df.withColumn(field.name, col(field.name).cast(field.dataType))
 
         #Write the DataFrame with the new schema to a new collection in MongoDB
-        write_to_collection(host, port, target_db, collection,new_df)
+        write_to_collection(host, port, target_db, collection, new_df)
         logger.info(f"Successfully converted data types for collection '{collection}'.")
     except Exception as e:
         logger.error(f"Error while converting data types for collection '{collection}': {e}")
