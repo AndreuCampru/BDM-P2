@@ -40,7 +40,8 @@ def write_to_collection(vm_host, mongodb_port, db_name, collection_name, datafra
     dataframe.write.format("mongo") \
         .option("uri", uri) \
         .option("encoding", "utf-8-sig") \
-        .mode("overwrite") \
+        .option("replaceDocument", "true") \
+        .mode("append") \
         .save()
 
 #Function to drop duplicates and save new collection
@@ -189,30 +190,96 @@ def change_collection_schema(spark, host, port, source_db, target_db, collection
     except Exception as e:
         logger.error(f"Error while converting data types for collection '{collection}': {e}")
 
+def rename_collection_columns(spark, host, port, db, collection, rename_mapping):
+    try:
+        # Read the collection from MongoDB
+        df = read_collection(spark, host, port, db, collection)
+        if df is None:
+            logger.error(f"No data found in collection '{collection}' in database '{db}'")
+            return
+
+        # Rename columns based on the provided mapping
+        for old_name, new_name in rename_mapping.items():
+            if old_name in df.columns:
+                df = df.withColumnRenamed(old_name, new_name)
+            else:
+                logger.warning(f"Column '{old_name}' not found in collection '{collection}'")
+
+        # Write the DataFrame with renamed columns to the same collection in MongoDB
+        write_to_collection(host, port, db, collection, df)
+        logger.info(f"Successfully renamed columns for collection '{collection}'.")
+    except Exception as e:
+        logger.error(f"Error while renaming columns for collection '{collection}': {e}")
+        
+        
+# def reconcile_data(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection):
+#     try:
+#         # Read input collection
+#         input_df = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection)
+
+#         # Read lookup collections
+#         lookup_district_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_district_collection)
+#         lookup_neighborhood_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_neighborhood_collection)
+
+#         # Preprocess join columns to lower case and remove accents
+#         input_df = input_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
+#         input_df = input_df.withColumn("neighborhood_name", lower(regexp_replace(col("neighborhood_name"), "[\u0300-\u036F]", "")))
+        
+#         lookup_district_df = lookup_district_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
+#         lookup_neighborhood_df = lookup_neighborhood_df.withColumn("neighborhood_name", lower(regexp_replace(col("neighborhood_name"), "[\u0300-\u036F]", "")))
+
+#         # Reconcile district
+#         reconciled_df = input_df.join(lookup_district_df, input_df["district_name"] == lookup_district_df["district_name"], "left") \
+#                                 .select(input_df["*"], lookup_district_df["district_reconciled"]) \
+#                                 .drop(lookup_district_df["district_name"])
+
+#         # Reconcile neighborhood
+#         reconciled_df = reconciled_df.join(lookup_neighborhood_df, reconciled_df["neighborhood_name"] == lookup_neighborhood_df["neighborhood_name"], "left") \
+#                                      .select(reconciled_df["*"], lookup_neighborhood_df["neighborhood_reconciled"].alias("neigh_name_reconciled")) \
+#                                      .drop(lookup_neighborhood_df["neighborhood_name"])
+
+#         reconciled_df = reconciled_df.dropDuplicates(["_id"])
+
+#         # Write the reconciled data to a new collection in MongoDB
+#         write_to_collection(vm_host, mongodb_port, formatted_db, output_collection, reconciled_df)
+#         logger.info(f"Reconciled data written to collection '{output_collection}' in MongoDB.")
+#     except Exception as e:
+#         logger.error(f"Error reconciling data: {e}")
+
+from pyspark.sql.functions import col, lower, regexp_replace, explode
 
 def reconcile_data(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection):
     try:
         # Read input collection
         input_df = read_collection(spark, vm_host, mongodb_port, persistent_db, input_collection)
 
+        # Check if the collection has a 'value' field and it's an array
+        if 'value' in input_df.columns:
+            # Explode the 'value' field to access nested fields
+            exploded_df = input_df.withColumn("value", explode(col("value"))).select(col("_id"), col("value.*"))
+            # Rename the 'neighborhood' column to 'neighborhood_name' to match the other collections
+            exploded_df = exploded_df.withColumnRenamed("neighborhood", "neighborhood_name")
+        else:
+            exploded_df = input_df
+
         # Read lookup collections
         lookup_district_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_district_collection)
         lookup_neighborhood_df = read_collection(spark, vm_host, mongodb_port, formatted_db, lookup_neighborhood_collection)
 
         # Preprocess join columns to lower case and remove accents
-        input_df = input_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
-        input_df = input_df.withColumn("neigh_name ", lower(regexp_replace(col("neigh_name "), "[\u0300-\u036F]", "")))
+        exploded_df = exploded_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
+        exploded_df = exploded_df.withColumn("neighborhood_name", lower(regexp_replace(col("neighborhood_name"), "[\u0300-\u036F]", "")))
         
         lookup_district_df = lookup_district_df.withColumn("district_name", lower(regexp_replace(col("district_name"), "[\u0300-\u036F]", "")))
         lookup_neighborhood_df = lookup_neighborhood_df.withColumn("neighborhood_name", lower(regexp_replace(col("neighborhood_name"), "[\u0300-\u036F]", "")))
 
         # Reconcile district
-        reconciled_df = input_df.join(lookup_district_df, input_df["district_name"] == lookup_district_df["district_name"], "left") \
-                                .select(input_df["*"], lookup_district_df["district_reconciled"]) \
+        reconciled_df = exploded_df.join(lookup_district_df, exploded_df["district_name"] == lookup_district_df["district_name"], "left") \
+                                .select(exploded_df["*"], lookup_district_df["district_reconciled"]) \
                                 .drop(lookup_district_df["district_name"])
 
         # Reconcile neighborhood
-        reconciled_df = reconciled_df.join(lookup_neighborhood_df, reconciled_df["neigh_name "] == lookup_neighborhood_df["neighborhood_name"], "left") \
+        reconciled_df = reconciled_df.join(lookup_neighborhood_df, reconciled_df["neighborhood_name"] == lookup_neighborhood_df["neighborhood_name"], "left") \
                                      .select(reconciled_df["*"], lookup_neighborhood_df["neighborhood_reconciled"].alias("neigh_name_reconciled")) \
                                      .drop(lookup_neighborhood_df["neighborhood_name"])
 

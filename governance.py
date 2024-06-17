@@ -15,7 +15,8 @@ from data_formatters import (
     merge_lookup_district_tables, 
     merge_lookup_neighborhood_tables, 
     change_collection_schema, 
-    reconcile_data
+    reconcile_data,
+    rename_collection_columns
 )
 
 from predictive_analysis import get_data_from_formatted_to_exploitation, preprocess_and_train_model
@@ -33,11 +34,14 @@ def main():
 
     ## Data formatters
     # Collection names for deduplication
+    # collections = [
+    #     "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN",
+    #     "Income_lookup_district", "Income_lookup_neighborhood",
+    #     "Rent_lookup_district", "Rent_lookup_neigh",
+    #     "Density_lookup_district", "Density_lookup_neighborhood"
+    # ]
     collections = [
-        "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN",
-        "Income_lookup_district", "Income_lookup_neighborhood",
-        "Rent_lookup_district", "Rent_lookup_neigh",
-        "Density_lookup_district", "Density_lookup_neighborhood"
+        "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN"
     ]
     
     # Collection names for merging
@@ -45,10 +49,10 @@ def main():
     neighborhood_collections = ["Income_lookup_neighborhood", "Rent_lookup_neigh", "Density_lookup_neighborhood"]
     
     # Collection names for schema change
-    collections = [
-        "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN",
-        "lookup_table_district", "lookup_table_neighborhood"
-        ]
+    # collections = [
+    #     "Income_OpenBCN", "Rent_Idealista", "Density_OpenBCN",
+    #     "lookup_table_district", "lookup_table_neighborhood"
+    #     ]
     new_schema_lookup_neighborhood = StructType([
                     StructField("_id", StringType(), nullable=False),
                     StructField("neighborhood", StringType(), nullable=False),
@@ -58,6 +62,7 @@ def main():
                     StructField("ne_n", StringType(), nullable=True),
                     StructField("ne_re", StringType(), nullable=True),
                 ])
+    
     
     new_schema_lookup_district = StructType([
                     StructField("_id", StringType(), nullable=False),
@@ -78,7 +83,7 @@ def main():
                             StructField("typology", StringType(), nullable=True)
                         ]), nullable=True),
                         StructField("distance", StringType(), nullable=True),
-                        StructField("district", StringType(), nullable=True),
+                        StructField("district_name", StringType(), nullable=True),
                         StructField("exterior", BooleanType(), nullable=True),
                         StructField("externalReference", StringType(), nullable=True),
                         StructField("floor", IntegerType(), nullable=True),
@@ -122,7 +127,7 @@ def main():
 
     new_schema_income = StructType([
                     StructField("_id", IntegerType(), nullable=False),
-                    StructField("neigh_name", StringType(), nullable=False),
+                    StructField("neigh_name ", StringType(), nullable=False),
                     StructField("district_id", IntegerType(), nullable=False),
                     StructField("district_name", StringType(), nullable=False),
                     StructField("info", ArrayType(StructType([
@@ -132,9 +137,10 @@ def main():
                     ])), nullable=True)
                 ])  
 
+#EL PROBLEMA ES QUE EL CAMBIO DE DATOS SOLO CAMBIA EL TIPO, NO EL NOMBRE, POR LO QUE NO ESTA COMPARANDO LAS MISMAS COLUMNAS U NO HAVECC EL RECONCILIAR
     new_schema_density = StructType([
                     StructField("_id", StringType(), nullable=False),
-                    StructField("neigh_name", StringType(), nullable=False),
+                    StructField("neigh_name ", StringType(), nullable=False),
                     StructField("district_id", StringType(), nullable=False),
                     StructField("district_name", StringType(), nullable=False),
                     StructField("info", ArrayType(StructType([
@@ -147,8 +153,8 @@ def main():
          
     # Collection names for reconciliation
     input_collections = ["Rent_Idealista_deduplicated", "Income_OpenBCN_deduplicated", "Density_OpenBCN_deduplicated"]
-    lookup_district_collection = "lookup_table_district_deduplicated"
-    lookup_neighborhood_collection = "lookup_table_neighborhood_deduplicted"
+    lookup_district_collection = "lookup_table_district"
+    lookup_neighborhood_collection = "lookup_table_neighborhood"
     output_collections = ["Rent_Idealista_reconciled", "Income_OpenBCN_reconciled", "Density_OpenBCN_reconciled"]
     
     #Configure the logger
@@ -162,19 +168,35 @@ def main():
         return
     
     # Drop duplicates and save new collections
-    drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, persistent_db, formatted_db, collections)
+    #drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, persistent_db, formatted_db, collections)
+    drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, persistent_db, persistent_db, collections)
     
     # Merge lookup district tables
+    # merge_lookup_district_tables(
+    #     spark, vm_host, mongodb_port, 
+    #     persistent_db, formatted_db, 
+    #     "lookup_table_district", *district_collections
+    # )
+    
+    # # Merge lookup neighborhood tables
+    # merge_lookup_neighborhood_tables(
+    #     spark, vm_host, mongodb_port, 
+    #     persistent_db, formatted_db, 
+    #     "lookup_table_neighborhood", *neighborhood_collections
+    # )
+    
+    #TEST POSANT AQUESTES TAULES A LA LANDING ZONE
+    
     merge_lookup_district_tables(
         spark, vm_host, mongodb_port, 
-        persistent_db, formatted_db, 
+        persistent_db, persistent_db, 
         "lookup_table_district", *district_collections
     )
     
     # Merge lookup neighborhood tables
     merge_lookup_neighborhood_tables(
         spark, vm_host, mongodb_port, 
-        persistent_db, formatted_db, 
+        persistent_db, persistent_db, 
         "lookup_table_neighborhood", *neighborhood_collections
     )
     
@@ -182,18 +204,50 @@ def main():
     # Change collection schemas
     change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "lookup_table_neighborhood", new_schema_lookup_neighborhood)
     change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "lookup_table_district", new_schema_lookup_district)
-    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Rent_Idealista", new_schema_idealista)
-    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Income_OpenBCN", new_schema_income)
-    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Density_OpenBCN", new_schema_density)
+    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Rent_Idealista_deduplicated", new_schema_idealista)
+    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Income_OpenBCN_deduplicated", new_schema_income)
+    change_collection_schema(spark, vm_host, mongodb_port, persistent_db, formatted_db, "Density_OpenBCN_deduplicated", new_schema_density)
     
     
-    # Reconcile data for each input collection
+
+
+    # We need to rename the columns of the collections to match the ones in the lookup tables
+    rename_mapping_density = {
+        "neigh_name": "neighborhood_name",        
+    }
+    
+    rename_mapping_income = {
+        "neigh_name ": "neighborhood_name",        
+    }
+
+    rename_collection_columns(spark, vm_host, mongodb_port, formatted_db, "Density_OpenBCN_deduplicated", rename_mapping_density)
+    rename_collection_columns(spark, vm_host, mongodb_port, formatted_db, "Income_OpenBCN_deduplicated", rename_mapping_income)
+
+        # Reconcile data for each input collection
     for input_collection, output_collection in zip(input_collections, output_collections):
         reconcile_data(
             spark, vm_host, mongodb_port, 
-            persistent_db, formatted_db, 
+            formatted_db, formatted_db, 
             input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection
         )
+    
+    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
+    #                input_collection="Income_OpenBCN_deduplicated", 
+    #                lookup_district_collection="lookup_table_district", 
+    #                lookup_neighborhood_collection="lookup_table_neighborhood", 
+    #                output_collection="Income_OpenBCN_reconciled")
+    
+    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
+    #             input_collection="Rent_Idealista_deduplicated", 
+    #             lookup_district_collection="lookup_table_district", 
+    #             lookup_neighborhood_collection="lookup_table_neighborhood", 
+    #             output_collection="Rent_Idealista_reconciled")
+        
+    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
+    #     input_collection="Density_OpenBCN_deduplicated", 
+    #     lookup_district_collection="lookup_table_district", 
+    #     lookup_neighborhood_collection="lookup_table_neighborhood", 
+    #     output_collection="Density_OpenBCN_reconciled")
 
     logger.info("Data processing pipeline completed successfully.")
 
@@ -201,17 +255,17 @@ def main():
 
     ## Predictive Analysis
     # Move data from formatted zone to exploitation zone
-    get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db)
+    # get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db)
     
-    # Preprocess data and train model
-    model = preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db)
+    # # Preprocess data and train model
+    # model = preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db)
     
-    # Get the current directory
-    current_dir = os.getcwd()
+    # # Get the current directory
+    # current_dir = os.getcwd()
     
-    # Save the model in the current directory
-    model.write().overwrite().save(current_dir + "/model")
-    logger.info(f'Data training process completed. Model saved at {current_dir}')
+    # # Save the model in the current directory
+    # model.write().overwrite().save(current_dir + "/model")
+    # logger.info(f'Data training process completed. Model saved at {current_dir}')
 
 
 if __name__ == "__main__":
