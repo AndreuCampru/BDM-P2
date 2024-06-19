@@ -146,7 +146,7 @@ def main():
                     StructField("info", ArrayType(StructType([
                         StructField("year", IntegerType(), nullable=True),
                         StructField("population", DoubleType(), nullable=True),
-                        StructField("density (inh/ha)", DoubleType(), nullable=True),
+                        StructField("density(inh/ha)", DoubleType(), nullable=True),
                         StructField("net_density (inh/ha)", DoubleType(), nullable=True)
                     ])), nullable=True)
                 ])
@@ -213,12 +213,13 @@ def main():
 
     # We need to rename the columns of the collections to match the ones in the lookup tables
     rename_mapping_density = {
-        "neigh_name": "neighborhood_name",        
+        "neigh_name": "neighborhood_name",  
     }
     
     rename_mapping_income = {
         "neigh_name ": "neighborhood_name",        
     }
+    
 
     rename_collection_columns(spark, vm_host, mongodb_port, formatted_db, "Density_OpenBCN_deduplicated", rename_mapping_density)
     rename_collection_columns(spark, vm_host, mongodb_port, formatted_db, "Income_OpenBCN_deduplicated", rename_mapping_income)

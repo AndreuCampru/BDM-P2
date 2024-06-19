@@ -4,7 +4,7 @@ from pyspark.sql.functions import col, lower, regexp_replace, udf, lit, explode,
 from pyspark.sql.types import DoubleType
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lower, regexp_replace, when, udf
+from pyspark.sql.functions import col, lower, regexp_replace, when, udf, lit, explode, collect_list, struct, collect_set
 import logging
 from pyspark.sql.types import *
 import jellyfish # for similarity jaro_winkler_udf
@@ -202,14 +202,18 @@ def rename_collection_columns(spark, host, port, db, collection, rename_mapping)
         for old_name, new_name in rename_mapping.items():
             if old_name in df.columns:
                 df = df.withColumnRenamed(old_name, new_name)
+            elif f"info.{old_name}" in df.columns:
+                df = df.withColumn(f"info.{new_name}", col(f"info.{old_name}")).drop(f"info.{old_name}")
             else:
                 logger.warning(f"Column '{old_name}' not found in collection '{collection}'")
+
 
         # Write the DataFrame with renamed columns to the same collection in MongoDB
         write_to_collection(host, port, db, collection, df)
         logger.info(f"Successfully renamed columns for collection '{collection}'.")
     except Exception as e:
         logger.error(f"Error while renaming columns for collection '{collection}': {e}")
+
         
         
 # def reconcile_data(spark, vm_host, mongodb_port, persistent_db, formatted_db, input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection):
