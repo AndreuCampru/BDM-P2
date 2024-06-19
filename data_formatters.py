@@ -20,6 +20,7 @@ def create_spark_session():
             .master("local[*]") \
             .appName("Unify Lookup District") \
             .config('spark.jars.packages', 'org.mongodb.spark:mongo-spark-connector_2.12:3.0.1') \
+            .config('spark.jars', 'BDM-P2/postgresql-42.7.3.jar') \
             .getOrCreate()
         return spark
     except Exception as e:

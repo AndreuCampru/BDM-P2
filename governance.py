@@ -1,7 +1,4 @@
-# Description: This script is the main entry point for the data pipeline that processes the data and prepares it for analysis. The script consists of the following steps:
-# 1) Data formatters
-# 2) Descriptive analysis
-# 3) Predictive analysis
+
 
 
 # Import required libraries
@@ -19,7 +16,8 @@ from data_formatters import (
     rename_collection_columns
 )
 
-from predictive_analysis import get_data_from_formatted_to_exploitation, preprocess_and_train_model
+from descriptive_analysis_v2 import descriptive_analysis
+#from predictive_analysis import descriptive_analysis
 
 
 def main():
@@ -31,6 +29,11 @@ def main():
     persistent_db = "persistent_landing_zone"
     formatted_db = "formatted_zone"
     exploitation_db = "exploitation_zone"
+    
+    #Postgres parameters for descriptive analysis
+    postgres_url = "jdbc:postgresql://postgresfib.fib.upc.edu:6433/ADSDBpablo.gomez.navarro"
+    postgres_user = "pablo.gomez.navarro"
+    postgres_password = "DB221100"
 
     ## Data formatters
     # Collection names for deduplication
@@ -172,27 +175,14 @@ def main():
     drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, persistent_db, persistent_db, collections)
     
     # Merge lookup district tables
-    # merge_lookup_district_tables(
-    #     spark, vm_host, mongodb_port, 
-    #     persistent_db, formatted_db, 
-    #     "lookup_table_district", *district_collections
-    # )
-    
-    # # Merge lookup neighborhood tables
-    # merge_lookup_neighborhood_tables(
-    #     spark, vm_host, mongodb_port, 
-    #     persistent_db, formatted_db, 
-    #     "lookup_table_neighborhood", *neighborhood_collections
-    # )
-    
-    #TEST POSANT AQUESTES TAULES A LA LANDING ZONE
-    
     merge_lookup_district_tables(
         spark, vm_host, mongodb_port, 
         persistent_db, persistent_db, 
         "lookup_table_district", *district_collections
     )
+
     
+
     # Merge lookup neighborhood tables
     merge_lookup_neighborhood_tables(
         spark, vm_host, mongodb_port, 
@@ -232,27 +222,13 @@ def main():
             input_collection, lookup_district_collection, lookup_neighborhood_collection, output_collection
         )
     
-    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
-    #                input_collection="Income_OpenBCN_deduplicated", 
-    #                lookup_district_collection="lookup_table_district", 
-    #                lookup_neighborhood_collection="lookup_table_neighborhood", 
-    #                output_collection="Income_OpenBCN_reconciled")
-    
-    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
-    #             input_collection="Rent_Idealista_deduplicated", 
-    #             lookup_district_collection="lookup_table_district", 
-    #             lookup_neighborhood_collection="lookup_table_neighborhood", 
-    #             output_collection="Rent_Idealista_reconciled")
-        
-    # reconcile_data(spark, vm_host, mongodb_port, formatted_db, formatted_db, 
-    #     input_collection="Density_OpenBCN_deduplicated", 
-    #     lookup_district_collection="lookup_table_district", 
-    #     lookup_neighborhood_collection="lookup_table_neighborhood", 
-    #     output_collection="Density_OpenBCN_reconciled")
 
     logger.info("Data processing pipeline completed successfully.")
 
     ## Descriptive Analysis
+    
+    descriptive_analysis()
+
 
     ## Predictive Analysis
     # Move data from formatted zone to exploitation zone
