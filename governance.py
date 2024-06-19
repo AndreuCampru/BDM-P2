@@ -4,7 +4,6 @@
 # Import required libraries
 import logging
 from pyspark.sql.types import *
-import os
 
 from data_formatters import (
     create_spark_session, 
@@ -17,7 +16,7 @@ from data_formatters import (
 )
 
 from descriptive_analysis_v2 import descriptive_analysis
-#from predictive_analysis import descriptive_analysis
+from predictive_analysis import predictive_analysis
 
 
 def main():
@@ -231,18 +230,8 @@ def main():
 
 
     ## Predictive Analysis
-    # Move data from formatted zone to exploitation zone
-    # get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db)
-    
-    # # Preprocess data and train model
-    # model = preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db)
-    
-    # # Get the current directory
-    # current_dir = os.getcwd()
-    
-    # # Save the model in the current directory
-    # model.write().overwrite().save(current_dir + "/model")
-    # logger.info(f'Data training process completed. Model saved at {current_dir}')
+
+    predictive_analysis(spark, vm_host, mongodb_port, formatted_db, exploitation_db)
 
 
 if __name__ == "__main__":

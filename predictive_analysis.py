@@ -7,7 +7,7 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler
 from pyspark.ml.regression import GBTRegressor
 from pyspark.ml.evaluation import RegressionEvaluator
-
+import os
 
 #Configure the logger
 logging.basicConfig(level=logging.INFO)
@@ -40,9 +40,9 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         formatted_db,
         "Rent_Idealista_reconciled"
     ).select("_id", "size", "rooms", "bathrooms", "latitude", "longitude", "exterior", "floor", "has360",
-        "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo", "neighborhood_id", "numPhotos", "price") \
+        "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo", "neighborhood_name", "numPhotos", "price") \
         .filter(col("municipality") == "Barcelona") \
-        .filter(col("neighborhood_id").isNotNull())
+        .filter(col("neighborhood_name").isNotNull())
     # Read income_reconciled collection and select relevant columns
     income_df = MongoDBUtils.read_collection(
         logger,
@@ -51,7 +51,7 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         mongodb_port,
         formatted_db,
         "Income_OpenBCN_reconciled"
-    ).select("_id", "info.year", "info.RFD")
+    ).select("_id", "neighborhood_name", "info.year", "info.RFD")
     # Read density_reconciled collection and select relevant columns
     density_df = MongoDBUtils.read_collection(
         logger,
@@ -60,16 +60,16 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         mongodb_port,
         formatted_db,
         "Density_OpenBCN_reconciled"
-    ).select("_id", "info.year", "info.density")
+    ).select("_id", "neighborhood_name", "info.year", "info.density")
     # Join the three dataframes on district_id
     joined_df = idealista_df.join(
         income_df,
-        idealista_df["neighborhood_id"] == income_df["_id"],
+        idealista_df["neighborhood_name"] == income_df["neighborhood_name"],
         "left"
-    ).drop(income_df["_id"]).withColumnRenamed("year", "income_year")
+    ).drop(income_df["neighborhood_name"]).withColumnRenamed("year", "income_year")
     joined_df = joined_df.join(
         density_df,
-        joined_df["neighborhood_id"] == density_df["_id"],
+        joined_df["neighborhood_name"] == density_df["neighborhood_name"],
         "left"
     ).drop(density_df["_id"]).withColumnRenamed("year", "density_year")
     logger.info('Data sources joined successfully.')
@@ -166,3 +166,19 @@ def preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitatio
     logger.info(f"R-squared (R2): {r2}")
 
     return model
+
+def predictive_analysis(spark, vm_host, mongodb_port, formatted_db, exploitation_db):
+    # Move data from formatted zone to exploitation zone
+    get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db)
+    
+    # # Preprocess data and train model
+    model = preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db)
+    
+    # # Get the current directory
+    current_dir = os.getcwd()
+    
+    # # Save the model in the current directory
+    model.write().overwrite().save(current_dir + "/model")
+    logger.info(f'Data training process completed. Model saved at {current_dir}')
+
+    return None
