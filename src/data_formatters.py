@@ -46,6 +46,23 @@ def write_to_collection(vm_host, mongodb_port, db_name, collection_name, datafra
         .mode("append") \
         .save()
 
+
+#Function to drop a collection from a database in MongoDB
+def drop_collection(vm_host, mongodb_port, db_name, collection_name):
+    try:
+        # Create a MongoDB client
+        client = MongoClient(f'mongodb://{vm_host}:{mongodb_port}/')
+        
+        # Access the specified database
+        db = client[db_name]
+        
+        # Drop the specified collection
+        db[collection_name].drop()
+        
+        logger.info(f"Successfully dropped collection '{collection_name}' from database '{db_name}'.")
+    except Exception as e:
+        logger.error(f"Error while dropping collection '{collection_name}' from database '{db_name}': {e}")
+
 #Function to drop duplicates and save new collection
 def drop_duplicates_and_save_new_collection(spark, vm_host, mongodb_port, source_db_name, sink_db_name, collections):
     try:

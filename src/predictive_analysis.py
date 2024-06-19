@@ -1,7 +1,7 @@
 # Importing the required libraries
 from pyspark.sql import SparkSession
 import logging
-from mongo_utils import MongoDBUtils
+from src.mongo_utils import MongoDBUtils
 from pyspark.sql.functions import col, expr
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler

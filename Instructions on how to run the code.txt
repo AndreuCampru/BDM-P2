@@ -1,0 +1,3 @@
+# Instructions on how to run the code
+
+If you are using Apache Spark on a Windows machine, ensure that the hadoop.dll file is present in your Hadoop/bin directory.
