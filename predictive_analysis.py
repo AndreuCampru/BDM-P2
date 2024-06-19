@@ -13,22 +13,6 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# Function to create a Spark session
-def create_spark_session(logger):
-    try:
-        spark = SparkSession.builder \
-            .master("local[*]") \
-            .appName("Unify Lookup District") \
-            .config('spark.jars.packages', 'org.mongodb.spark:mongo-spark-connector_2.12:3.0.1') \
-            .getOrCreate()
-        return spark
-    except Exception as e:
-        logger.error(f"Error creating Spark session: {e}")
-        
-    return None
-
-
 # Function to move data from formatted zone to exploitation zone
 def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port, formatted_db, exploitation_db):
     # Read idealista_reconciled collection and select relevant columns
@@ -43,6 +27,7 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         "has3DTour", "hasLift", "hasPlan", "hasStaging", "hasVideo", "neighborhood_name", "numPhotos", "price") \
         .filter(col("municipality") == "Barcelona") \
         .filter(col("neighborhood_name").isNotNull())
+    
     # Read income_reconciled collection and select relevant columns
     income_df = MongoDBUtils.read_collection(
         logger,
@@ -51,7 +36,9 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         mongodb_port,
         formatted_db,
         "Income_OpenBCN_reconciled"
-    ).select("_id", "neighborhood_name", "info.year", "info.RFD")
+    ).select("_id", col("neighborhood_name").alias("income_neighborhood_name"), col("info.year").alias("income_year"), "info.RFD") \
+      .withColumnRenamed("_id", "income_id")
+    
     # Read density_reconciled collection and select relevant columns
     density_df = MongoDBUtils.read_collection(
         logger,
@@ -60,19 +47,27 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
         mongodb_port,
         formatted_db,
         "Density_OpenBCN_reconciled"
-    ).select("_id", "neighborhood_name", "info.year", "info.density")
+    ).select("_id", col("neighborhood_name").alias("density_neighborhood_name"), col("info.year").alias("density_year"), col("info.density(inh/ha)").alias("density")) \
+      .withColumnRenamed("_id", "density_id")
+
     # Join the three dataframes on district_id
     joined_df = idealista_df.join(
         income_df,
-        idealista_df["neighborhood_name"] == income_df["neighborhood_name"],
+        idealista_df["neighborhood_name"] == income_df["income_neighborhood_name"],
         "left"
-    ).drop(income_df["neighborhood_name"]).withColumnRenamed("year", "income_year")
+    ).drop(income_df["income_neighborhood_name"])
     joined_df = joined_df.join(
         density_df,
-        joined_df["neighborhood_name"] == density_df["neighborhood_name"],
+        joined_df["neighborhood_name"] == density_df["density_neighborhood_name"],
         "left"
-    ).drop(density_df["_id"]).withColumnRenamed("year", "density_year")
+    ).drop(density_df["density_id"])
+
+    
+    # Drop rows where any value is null
+    joined_df = joined_df.dropna()
+
     logger.info('Data sources joined successfully.')
+
     # Save the joined dataframe to a new collection in MongoDB
     MongoDBUtils.write_to_collection(
         logger,
@@ -85,6 +80,7 @@ def get_data_from_formatted_to_exploitation(logger, spark, vm_host, mongodb_port
 
 # Function to preprocess data and train model
 def preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitation_db):
+
     df = MongoDBUtils.read_collection(
         logger,
         spark,
@@ -119,7 +115,8 @@ def preprocess_and_train_model(logger, spark, vm_host, mongodb_port, exploitatio
 
     # Convert string columns to numeric using StringIndexer
     string_cols = ["exterior", "has360", "has3DTour", "hasLift", "hasPlan",
-                   "hasStaging", "hasVideo", "neighborhood_id"]
+                   "hasStaging", "hasVideo"]
+    
     indexers = [StringIndexer(inputCol=column, outputCol=column+"_index", handleInvalid="skip").fit(df) for column in string_cols]
     pipeline = Pipeline(stages=indexers)
     df = pipeline.fit(df).transform(df)

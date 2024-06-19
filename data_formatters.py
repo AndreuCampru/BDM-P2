@@ -13,7 +13,7 @@ import jellyfish # for similarity jaro_winkler_udf
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-#Create a Spark session
+# Create a Spark session
 def create_spark_session():
     try:
         spark = SparkSession.builder \
@@ -25,6 +25,7 @@ def create_spark_session():
         return spark
     except Exception as e:
         logger.error(f"Error creating Spark session: {e}")
+
 
 #Function to read a collection from MongoDB
 def read_collection(spark, vm_host, mongodb_port, db_name, collection_name):
