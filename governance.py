@@ -227,7 +227,7 @@ def main():
     elif task == '2':
         descriptive_analysis() ## Descriptive Analysis. To execute this part, we need to have a PostgreSQL database running, and fortinet VPN
     elif task == '3':
-        predictive_analysis(spark, vm_host, mongodb_port, formatted_db, exploitation_db) #Ecexute the predictive analysis
+        predictive_analysis(spark, vm_host, mongodb_port, formatted_db, exploitation_db) #Execute the predictive analysis
     elif task == '4':
         descriptive_analysis() ## Descriptive Analysis. To execute this part, we need to have a PostgreSQL database running, and fortinet VPN
         predictive_analysis(spark, vm_host, mongodb_port, formatted_db, exploitation_db) #Execute the predictive analysis

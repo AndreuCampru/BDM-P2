@@ -1,3 +1,18 @@
 # Instructions on how to run the code
 
-If you are using Apache Spark on a Windows machine, ensure that the hadoop.dll file is present in your Hadoop/bin directory.
+1) If you are using Apache Spark on a Windows machine, ensure that the hadoop.dll file is present in your Hadoop/bin directory. We provide this file in the "extra files" directory.
+
+2) To set up the MongoDB environment, you need to manually create a database called "persistent_landing_zone" with the following collections:
+- Density_OpenBCN
+- Density_lookup_district
+- Density_lookup_neighborhood
+- Income_OpenBCN
+- Income_lookup_district
+- Income_lookup_neighborhood
+- Rent_Idealista
+- Rent_lookup_district
+- Rent_lookup_neigh
+
+After creating these collections, you need to import the respective JSON files into each collection.
+
+3) We have executed the code on two different PCs. On one of them, for reasons unknown, the collection "Income_OpenBCN_reconciled" was not created. To address this issue, we are providing the JSON file that should be imported into this collection in case the instructor encounters the same problem.You can find it in the "extra files" directory.
