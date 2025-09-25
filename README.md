@@ -38,14 +38,14 @@ The backbone integrates several data sources:
 
 - **Data Integration & Cleaning**  
   - Handling duplicates and reconciliation across multiple sources  
-  - Storage in distributed models (MongoDB collections)  
+  - Storage in MongoDB collections
 
 - **Computation & Analysis**  
   - Apache Spark for integration, reconciliation, KPI calculation, and machine learning  
   - Spark MLlib for training and validating predictive models  
 
 - **Visualization**  
-  - KPIs and streaming results displayed via a chosen dashboard tool (e.g., Tableau, Kibana).  
+  - KPIs and streaming results displayed via a Tableau dashboard.  
 
 ---
 
